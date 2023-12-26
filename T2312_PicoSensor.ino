@@ -67,11 +67,9 @@ typedef struct
 typedef struct 
 {
     uint8_t     publ_indx;
-    float       temp;
-    float       humidity;
-    float       lux;
-    float       ldr1;
-    float       ldr2;
+    uint32_t    next_sec;
+    uint32_t    next_ping;
+    uint32_t    sec_cntr;
     uint16_t    set_temp;
     bool        heat_on;
     fault_cntr_st   fault_cntr;
@@ -81,8 +79,8 @@ typedef struct
 {
     Adafruit_MQTT_Publish *pub_feed;
     char      name[20];
-    uint16_t  interval;
-    uint16_t  cntr;
+    uint32_t  interval;
+    uint32_t  next_sec;
     float     value;
 
 } my_pub_st;
@@ -122,30 +120,30 @@ my_pub_st my_pub[FEED_PUB_NBR_OF] =
 {
     [FEED_PUB_TEMPERATURE] = {
             .pub_feed = &sensor_temperature,
-            .name = "Temperature",
+            .name = "TEMP",
             .interval = 60,
-            .cntr = 50,
+            .next_sec = 0,
             .value = 0.0
           },
     [FEED_PUB_HUMIDITY] = {
             .pub_feed = &sensor_humidity,
-            .name = "Humidity",
+            .name = "HUMI",
             .interval = 120,
-            .cntr = 100,
+            .next_sec = 0,
             .value = 0.0
           },
     [FEED_PUB_LDR1] = {
             .pub_feed = &sensor_ldr1,
-            .name = "LDR 1",
+            .name = "LDR1",
             .interval = 300,
-            .cntr = 50,
+            .next_sec = 0,
             .value = 0.0
           },
     [FEED_PUB_LDR2] = {
             .pub_feed = &sensor_ldr2,
-            .name = "LDR 2",
+            .name = "LDR2",
             .interval = 300,
-            .cntr = 60,
+            .next_sec = 0,
             .value = 0.0
           },
 };
@@ -166,8 +164,7 @@ control_st ctrl =
         .ldr_fault   = 0        
     }
 };
-//float temp = 20.0; //to store the temperature value
-uint32_t next_publ;
+
 
 void setup() 
 {
@@ -176,7 +173,18 @@ void setup()
     Serial1.begin(9600);
     delay(4000);
 
-    #ifdef
+    #ifdef VILLA_ASTRID_TUPA
+    my_pub[FEED_PUB_LDR1].interval = 0;
+    my_pub[FEED_PUB_LDR2].interval = 0;
+    #endif
+    #ifdef VILLA_ASTRID_PIHA
+    #endif
+    #ifdef VILLA_ASTRID_KHH
+    my_pub[FEED_PUB_LDR1].interval = 0;
+    my_pub[FEED_PUB_LDR2].interval = 0;
+    #endif
+
+
     pinMode(PIN_I2C_PWR_EN, OUTPUT);
     digitalWrite(PIN_I2C_PWR_EN,LOW);
     //while (!Serial) {
@@ -225,8 +233,16 @@ void setup()
     // connect to adafruit io
     //mqtt.subscribe(&set_temperature);
     connect();
-    next_publ = millis() + 5000;
-    ctrl.publ_indx = 0;
+
+    for (uint8_t indx = 0; indx < FEED_PUB_NBR_OF; indx++)
+    {
+        my_pub[indx].next_sec = ((indx+1)*10);
+    }
+    ctrl.next_sec   = millis() + 1000;
+    ctrl.next_ping  = millis();
+    ctrl.sec_cntr   = 0;
+    ctrl.publ_indx  = 0;
+    #ifdef VILLA_ASTRID_PIHA
     while(0)
     {
         //Serial1.println("<OL1:2345.1>");
@@ -238,6 +254,7 @@ void setup()
         delay(1000);
         Watchdog.reset();
     }
+    #endif
     
     
 }
@@ -299,116 +316,54 @@ void send_meas_to_uart(const char *id_4, float value)
     sprintf(buff, "<#X1T:OD_1;%s;%.2f;->\n",id_4,value);
     Serial.print(buff);
     Serial1.print(buff);
-    /*
-    Serial.print('<');
-    Serial.print(id_4);
-    Serial.print(':');
-    Serial.print(value);
-    Serial.println('>');
-    */
 }
+
 void loop() 
 {
     bool publ_status;
     char buff[80];
 
-    // ping adafruit io a few times to make sure we remain connected
-    if(! mqtt.ping(3)) 
-    {
-        if(! mqtt.connected()) connect();
-    }
-    if(!mqtt.connected())  
-    {
-        ctrl.fault_cntr.mqtt_fault++;      
-    }
-    else
-    {
-        ctrl.fault_cntr.mqtt_fault = 0;      
 
-        if (millis() > next_publ)
+    if (millis() > ctrl.next_ping)
+    {
+        ctrl.next_ping += 60000;
+        if(! mqtt.ping(3)) 
         {
-            next_publ = millis() + AIO_PUBLISH_INTERVAL_ms;
-            switch(ctrl.publ_indx)
-            {
-                case 0:
-                    if ( bme.performReading()) 
-                    {
-                        ctrl.temp = bme.temperature;
-                        Serial.print("temperature = ");
-                        Serial.print(ctrl.temp);
-                        send_meas_to_uart("TEMP",ctrl.temp);
-                        publ_status = sensor_temperature.publish(ctrl.temp); //Publish to Adafruit
-                        report_publ_status(publ_status);
-                        ctrl.fault_cntr.bme_fault = 0;
-                    }
-                    else
-                    {
-                        ctrl.fault_cntr.bme_fault++;
-                        Serial.println("Error when reading BME680");                            
-                    }
-                    ctrl.publ_indx++;
-                    break;
-                case 1:
-                    if ( bme.performReading()) 
-                    {
-                        ctrl.humidity = bme.humidity;
-                        send_meas_to_uart("HUMI",ctrl.humidity);
-                        publ_status = sensor_humidity.publish(ctrl.humidity); //Publish to Adafruit
-                        report_publ_status(publ_status);
-                        ctrl.fault_cntr.bme_fault = 0;
-                    }
-                    else
-                    {                                                        
-                        Serial.println("Error when reading BME680");
-                    }
-                    ctrl.publ_indx++;
-                    break;
-                 case 2:     
-                    ctrl.ldr1 = (float) analogRead(PIN_LDR1);
-                    send_meas_to_uart("LDR1",ctrl.ldr1);
-                    publ_status = sensor_ldr1.publish(ctrl.ldr1); 
-                    report_publ_status(publ_status);                    
-                    ctrl.publ_indx++;
-                    break;  
-                case 3:     
-                    ctrl.ldr2 = (float) analogRead(PIN_LDR2);
-                    send_meas_to_uart("LDR2",ctrl.ldr2);
-                    publ_status = sensor_ldr2.publish(ctrl.ldr2); 
-                    report_publ_status(publ_status);                    
-                    ctrl.publ_indx = 0;
-                    break;  
-                default:
-                    ctrl.publ_indx = 0;
-                    break;
-            }
+            if(! mqtt.connected()) connect();
         }
-        // sprintf(buff, "%d %d %d\n",ctrl.fault_cntr.mqtt_fault, ctrl.fault_cntr.bme_fault, ctrl.fault_cntr.ldr_fault);
-        // Serial.print(buff);
-        if ((ctrl.fault_cntr.mqtt_fault < 2) &&
-            (ctrl.fault_cntr.bme_fault < 2) &&
-            (ctrl.fault_cntr.ldr_fault < 4))
+        if(!mqtt.connected())  
         {
-            Watchdog.reset();
+            ctrl.fault_cntr.mqtt_fault++;      
         }
         else
         {
-            Serial.println("A Watchdog reset will occur");             
-        }                               
+            ctrl.fault_cntr.mqtt_fault = 0;    
+        }
+
+    }
+    
+    if (millis() > ctrl.next_sec)
+    {
+        ctrl.next_sec += 1000;
+        ctrl.sec_cntr++;
+
+        if (my_pub[ctrl.publ_indx].interval > 0)
+        {
+            if( ctrl.sec_cntr >= my_pub[ctrl.publ_indx].next_sec )
+            {
+                my_pub[ctrl.publ_indx].next_sec +=  my_pub[ctrl.publ_indx].interval;
+                send_meas_to_uart(my_pub[ctrl.publ_indx].name, my_pub[ctrl.publ_indx].value);
+                publ_status = my_pub[ctrl.publ_indx].pub_feed->publish(my_pub[ctrl.publ_indx].value); //Publish to Adafruit
+                report_publ_status(publ_status);
+                ctrl.fault_cntr.bme_fault = 0;
+            }
+
+        }
+        if(++ctrl.publ_indx >= FEED_PUB_NBR_OF) ctrl.publ_indx = 0;
+
+        // ping adafruit io a few times to make sure we remain connected
+
     }
 
-    /*
-    Adafruit_MQTT_Subscribe *subscription;
-    while ((subscription = mqtt.readSubscription(5000))) 
-    {
-        if (subscription == &set_temperature) 
-        {
-            Serial.print(F("Set temperature: "));
-            Serial.println((char *)set_temperature.lastread);
-            ctrl.set_temp = atoi((char *)set_temperature.lastread);
-            Serial.println(ctrl.set_temp);
-        }
-    }
-    */
-    
-  
 }
+  
