@@ -6,13 +6,10 @@
  * https://github.com/infrapale/pico_arduino_sdk.git
  *
  */
-//#define VILLA_ASTRID_TUPA
-#define VILLA_ASTRID_PIHA
-// #define VILLA_ASTRID_KHH
 
-//#define PIRPANA
+#define PIRPANA
 //#define LILLA_ASTRID
-#define VILLA_ASTRID
+//#define VILLA_ASTRID
 #include <stdint.h>
 #include "stdio.h"
 #include "pico/stdlib.h"
@@ -23,7 +20,9 @@
 #include "secrets.h"
 //#include <Adafruit_PCT2075.h>
 // #include <Adafruit_Sensor.h>
-#include "Adafruit_BME680.h"
+#include "main.h"
+#include "measure.h"
+//#include "Adafruit_BME680.h"
 
 
 #include "Wire.h"
@@ -42,20 +41,6 @@
 
 #define SEALEVELPRESSURE_HPA (1013.25)
 
-#define PIN_SERIAL1_TX  (0u)
-#define PIN_SERIAL1_RX  (1u)
-#define PIN_I2C_PWR_EN  (15u)
-#define PIN_LDR1        (A0)
-#define PIN_LDR2        (A1)
-
-typedef enum
-{
-   FEED_PUB_TEMPERATURE = 0,
-   FEED_PUB_HUMIDITY,
-   FEED_PUB_LDR1,
-   FEED_PUB_LDR2,
-   FEED_PUB_NBR_OF
-} feed_pub_et;
 
 typedef struct
 {
@@ -69,6 +54,7 @@ typedef struct
     uint8_t     publ_indx;
     uint32_t    next_sec;
     uint32_t    next_ping;
+    uint32_t    next_measure;
     uint32_t    sec_cntr;
     uint16_t    set_temp;
     bool        heat_on;
@@ -87,8 +73,6 @@ typedef struct
 
 WiFiClient client;
 
-//Adafruit_PCT2075 PCT2075;
-Adafruit_BME680 bme; // I2C
 
 // Setup the MQTT client class by passing in the WiFi client and MQTT server and login details.
 // infrapale/feeds/lillaastrid.studio-temp
@@ -153,8 +137,6 @@ my_pub_st my_pub[FEED_PUB_NBR_OF] =
 control_st ctrl = 
 {
     .publ_indx = 0,
-    .temp = 20.0,
-    .humidity = 50.0,
     .set_temp = 18,
     .heat_on = false,
     .fault_cntr =
@@ -164,6 +146,7 @@ control_st ctrl =
         .ldr_fault   = 0        
     }
 };
+
 
 
 void setup() 
@@ -198,21 +181,8 @@ void setup()
     Wire1.setSCL(7);
     Wire1.setSDA(6);
     Wire1.begin();
-    bme = Adafruit_BME680(&Wire1); 
-   
 
-    if (!bme.begin(0x77)) {
-        Serial.println("Could not find a valid BME680 sensor, check wiring!");
-      while (1);
-    }
-    Serial.println("BME680 Sensor found");
-
-    // Set up oversampling and filter initialization
-    bme.setTemperatureOversampling(BME680_OS_8X);
-    bme.setHumidityOversampling(BME680_OS_2X);
-    bme.setPressureOversampling(BME680_OS_4X);
-    bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
-    bme.setGasHeater(320, 150); // 320*C for 150 ms
+    measure_initialize();
 
     WiFi.begin(WLAN_SSID, WLAN_PASS);
     uint32_t timeout = millis() + 15000;
@@ -240,6 +210,8 @@ void setup()
     }
     ctrl.next_sec   = millis() + 1000;
     ctrl.next_ping  = millis();
+    ctrl.next_measure = millis();
+
     ctrl.sec_cntr   = 0;
     ctrl.publ_indx  = 0;
     #ifdef VILLA_ASTRID_PIHA
@@ -323,6 +295,21 @@ void loop()
     bool publ_status;
     char buff[80];
 
+    if (millis() > ctrl.next_measure)
+    {
+        ctrl.next_measure += 60000;
+        if ( measure_read_bme()) 
+        {
+            my_pub[FEED_PUB_TEMPERATURE].value  = measure_get_bme_temperature();
+            my_pub[FEED_PUB_HUMIDITY].value     = measure_get_bme_humidity();
+        }
+        #ifdef VILLA_ASTRID_PIHA
+        int ldr1 = analogRead(A0);
+        int ldr2 = analogRead(A1);
+        my_pub[FEED_PUB_LDR1].value = (float)ldr1;
+        my_pub[FEED_PUB_LDR2].value = (float)ldr2;
+        #endif
+    }
 
     if (millis() > ctrl.next_ping)
     {
@@ -344,6 +331,8 @@ void loop()
     
     if (millis() > ctrl.next_sec)
     {
+        measure_state_machine();
+        Watchdog.reset();
         ctrl.next_sec += 1000;
         ctrl.sec_cntr++;
 
