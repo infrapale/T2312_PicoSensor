@@ -11,6 +11,7 @@
 #define LILLA_ASTRID
 //#define VILLA_ASTRID
 #include <stdint.h>
+#include "Arduino.h"
 #include "stdio.h"
 #include "pico/stdlib.h"
 #include "hardware/uart.h"
@@ -70,6 +71,7 @@ typedef struct
     float     value;
 
 } my_pub_st;
+
 
 WiFiClient client;
 
@@ -152,10 +154,12 @@ control_st ctrl =
 void setup() 
 {
     //Serial.begin(115200);
-    Serial1.setTX(8);
-    Serial1.setRX(9);
+    //Serial.setTX(1);
+    //Serial.setRX(2);
     Serial.begin(9600);
-    Serial1.begin(9600);
+    Serial2.setTX(8);
+    Serial2.setRX(9);
+    Serial2.begin(9600);
     delay(4000);
 
     #ifdef VILLA_ASTRID_TUPA
@@ -217,7 +221,7 @@ void setup()
     #ifdef VILLA_ASTRID_PIHA
     while(0)
     {
-        //Serial1.println("<OL1:2345.1>");
+        //Serial.println("<OL1:2345.1>");
         //Serial.println("<OL1:2345.1>");
         int ldr1 = analogRead(A0);
         Serial.print("LDR1 = "); Serial.println(ldr1);
@@ -286,8 +290,8 @@ void send_meas_to_uart(const char *id_4, float value)
 {
     char buff[40];
     sprintf(buff, "<#X1T:OD_1;%s;%.2f;->\n",id_4,value);
+    Serial2.print(buff);
     Serial.print(buff);
-    Serial1.print(buff);
 }
 
 void loop() 
@@ -304,10 +308,8 @@ void loop()
             my_pub[FEED_PUB_HUMIDITY].value     = measure_get_bme_humidity();
         }
         #ifdef VILLA_ASTRID_PIHA
-        int ldr1 = analogRead(A0);
-        int ldr2 = analogRead(A1);
-        my_pub[FEED_PUB_LDR1].value = (float)ldr1;
-        my_pub[FEED_PUB_LDR2].value = (float)ldr2;
+        my_pub[FEED_PUB_LDR1].value = measure_get_ldr1();
+        my_pub[FEED_PUB_LDR2].value = measure_get_ldr2();
         #endif
     }
 

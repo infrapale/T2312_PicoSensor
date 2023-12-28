@@ -60,11 +60,11 @@ bool measure_read_bme(void)
 
 void measure_toggle_i2c_power(void)
 {
-  pinMode(PIN_I2C_PWR_EN, OUTPUT);
-  digitalWrite(PIN_I2C_PWR_EN,LOW);
-  delay(500);
-  digitalWrite(PIN_I2C_PWR_EN,HIGH);
-  pinMode(PIN_I2C_PWR_EN, INPUT);
+  // pinMode(PIN_I2C_PWR_EN, OUTPUT);
+  // digitalWrite(PIN_I2C_PWR_EN,LOW);
+  // delay(500);
+  // digitalWrite(PIN_I2C_PWR_EN,HIGH);
+  // pinMode(PIN_I2C_PWR_EN, INPUT);
 }
 
 /// @note  call approximately 1/sec
