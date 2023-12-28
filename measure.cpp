@@ -6,6 +6,7 @@ Adafruit_BME680 bme; // I2C
 typedef struct 
 {
     bool bme_is_ok;
+    uint32_t bme_last_read;
     uint16_t state;
     uint32_t time_to_next;
     uint32_t sec_cntr;
@@ -14,6 +15,7 @@ typedef struct
 measure_ctrl_st mctrl =
 {
     .bme_is_ok = false,
+    .bme_last_read = 0,
     .state = 0,
     .time_to_next = 0,
     .sec_cntr = 0,
@@ -56,6 +58,15 @@ bool measure_read_bme(void)
     return mctrl.bme_is_ok;
 }
 
+void measure_toggle_i2c_power(void)
+{
+  pinMode(PIN_I2C_PWR_EN, OUTPUT);
+  digitalWrite(PIN_I2C_PWR_EN,LOW);
+  delay(500);
+  digitalWrite(PIN_I2C_PWR_EN,HIGH);
+  pinMode(PIN_I2C_PWR_EN, INPUT);
+}
+
 /// @note  call approximately 1/sec
 void measure_state_machine(void)
 {
@@ -65,19 +76,31 @@ void measure_state_machine(void)
     switch(mctrl.state)
     {
       case 0:
-        digitalWrite(PIN_I2C_PWR_EN,LOW);
-        delay(500);
-        digitalWrite(PIN_I2C_PWR_EN,HIGH);
+        measure_toggle_i2c_power();
         mctrl.time_to_next += 5;
         break;
       case 1:
         if (measure_initialize())
         {
           mctrl.state++;
-          mctrl.time_to_next = mctrl.sec_cntr;
-
+          mctrl.time_to_next = mctrl.sec_cntr + 2;
         }
+        else mctrl.state--;
         break;
+      case 2:
+        if (measure_read_bme())
+        {
+          mctrl.bme_last_read = mctrl.sec_cntr;
+        }
+        mctrl.state++;
+        break;
+      case 3:  
+        measure_toggle_i2c_power();
+        mctrl.state++;
+        break;
+      case 4:  
+        break;
+
     }
 
   }
@@ -95,5 +118,14 @@ float measure_get_bme_humidity(void)
     else return 0.0;
 }
 
+float measure_get_ldr1(void)
+{
+  int ldr1 = analogRead(A0);
+  return (float)ldr1;
+}
 
-
+float measure_get_ldr2(void)
+{
+  int ldr2 = analogRead(A1);
+  return (float)ldr2;
+}

@@ -13,6 +13,11 @@ float measure_get_bme_temperature(void);
 float measure_get_bme_humidity(void);
 
 
+float measure_get_ldr1(void);
+
+float measure_get_ldr2(void);
+
+
 
 
 #endif

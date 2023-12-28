@@ -7,8 +7,8 @@
  *
  */
 
-#define PIRPANA
-//#define LILLA_ASTRID
+//#define PIRPANA
+#define LILLA_ASTRID
 //#define VILLA_ASTRID
 #include <stdint.h>
 #include "stdio.h"
@@ -152,6 +152,8 @@ control_st ctrl =
 void setup() 
 {
     //Serial.begin(115200);
+    Serial1.setTX(8);
+    Serial1.setRX(9);
     Serial.begin(9600);
     Serial1.begin(9600);
     delay(4000);
@@ -168,8 +170,6 @@ void setup()
     #endif
 
 
-    pinMode(PIN_I2C_PWR_EN, OUTPUT);
-    digitalWrite(PIN_I2C_PWR_EN,LOW);
     //while (!Serial) {
     //  ;  // wait for serial port to connect. Needed for native USB port only
     //}
