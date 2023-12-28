@@ -8,8 +8,8 @@
  */
 
 //#define PIRPANA
-#define LILLA_ASTRID
-//#define VILLA_ASTRID
+//#define LILLA_ASTRID
+#define VILLA_ASTRID
 #include <stdint.h>
 #include "Arduino.h"
 #include "stdio.h"
@@ -101,6 +101,12 @@ Adafruit_MQTT_Publish sensor_humidity = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAM
 Adafruit_MQTT_Publish sensor_ldr1 = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/villaastrid.ulko-ldr-1");
 Adafruit_MQTT_Publish sensor_ldr2 = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/villaastrid.ulko-ldr-2");
 #endif
+#ifdef VILLA_ASTRID_KHH
+Adafruit_MQTT_Publish sensor_temperature = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/villaastrid.khh-temperature");
+Adafruit_MQTT_Publish sensor_humidity = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/villaastrid.khh-hum");
+Adafruit_MQTT_Publish sensor_ldr1 = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/villaastrid.ulko-ldr-1");
+Adafruit_MQTT_Publish sensor_ldr2 = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/villaastrid.ulko-ldr-2");
+#endif
 
 my_pub_st my_pub[FEED_PUB_NBR_OF] =
 {
@@ -177,7 +183,7 @@ void setup()
     //while (!Serial) {
     //  ;  // wait for serial port to connect. Needed for native USB port only
     //}
-    Serial.println(F("T2312_Pico_Sensor"));
+    Serial.println(F("T2312_PicoSensor"));
     Serial.println(__DATE__);Serial.println(__TIME__);
     // Connect to WiFi access point.
     Serial.print(F("Connecting to "));
@@ -289,7 +295,17 @@ void report_publ_status(bool publ_status)
 void send_meas_to_uart(const char *id_4, float value)
 {
     char buff[40];
+    #ifdef VILLA_ASTRID_TUPA
+    sprintf(buff, "<#X1T:TUPA;%s;%.2f;->\n",id_4,value);
+    #endif
+    #ifdef VILLA_ASTRID_PIHA
     sprintf(buff, "<#X1T:OD_1;%s;%.2f;->\n",id_4,value);
+    #endif
+    #ifdef VILLA_ASTRID_KHH
+    sprintf(buff, "<#X1T:KHH1;%s;%.2f;->\n",id_4,value);
+    #endif
+
+   
     Serial2.print(buff);
     Serial.print(buff);
 }
@@ -306,6 +322,11 @@ void loop()
         {
             my_pub[FEED_PUB_TEMPERATURE].value  = measure_get_bme_temperature();
             my_pub[FEED_PUB_HUMIDITY].value     = measure_get_bme_humidity();
+
+        }
+        else
+        {
+            ctrl.fault_cntr.bme_fault++;
         }
         #ifdef VILLA_ASTRID_PIHA
         my_pub[FEED_PUB_LDR1].value = measure_get_ldr1();
@@ -353,6 +374,17 @@ void loop()
         if(++ctrl.publ_indx >= FEED_PUB_NBR_OF) ctrl.publ_indx = 0;
 
         // ping adafruit io a few times to make sure we remain connected
+
+        if (ctrl.fault_cntr.bme_fault > 10) 
+        {
+          Serial.println("Too many BME faults");
+          while(1);
+        }
+        if (ctrl.fault_cntr.mqtt_fault > 10) 
+        {
+          Serial.println("Too many MQTT faults");
+          while(1);
+        }
 
     }
 
