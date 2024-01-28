@@ -1,4 +1,5 @@
 #include "main.h"
+#include "measure.h"
 
 //Adafruit_PCT2075 PCT2075;
 Adafruit_BME680 bme; // I2C
@@ -8,20 +9,43 @@ typedef struct
     bool bme_is_ok;
     uint32_t bme_last_read;
     uint16_t state;
+    uint16_t prev_state;
     uint32_t time_to_next;
     uint32_t sec_cntr;
 } measure_ctrl_st;
+
+typedef struct 
+{
+  float value;
+  bool active;
+  bool updated;
+
+} measure_st;
 
 measure_ctrl_st mctrl =
 {
     .bme_is_ok = false,
     .bme_last_read = 0,
     .state = 0,
+    .prev_state = 255,
     .time_to_next = 0,
     .sec_cntr = 0,
 
 };
 
+measure_st measure[MEAS_NBR_OF] = 
+{
+  [MEAS_TEMPERATURE]  = {0.0, true, false},
+  [MEAS_HUMIDITY]     = {0.0, true, false},
+  [MEAS_PRESSURE]     = {0.0, false, false},
+  #ifdef VILLA_ASTRID_PIHA
+  [MEAS_LDR1]         = {0.0, true, false},
+  [MEAS_LDR2]         = {0.0, true, false},
+  #else
+  [MEAS_LDR1]         = {0.0, false, false},
+  [MEAS_LDR2]         = {0.0, false, false},
+  #endif
+};
 
 bool measure_initialize(void)
 {
@@ -58,13 +82,13 @@ bool measure_read_bme(void)
     return mctrl.bme_is_ok;
 }
 
-void measure_toggle_i2c_power(void)
+void measure_i2c_power(bool pwr_on)
 {
-  // pinMode(PIN_I2C_PWR_EN, OUTPUT);
-  // digitalWrite(PIN_I2C_PWR_EN,LOW);
-  // delay(500);
-  // digitalWrite(PIN_I2C_PWR_EN,HIGH);
-  // pinMode(PIN_I2C_PWR_EN, INPUT);
+  Serial.printf("Power %d\n",pwr_on);
+  #ifdef VILLA_ASTRID_TUPA
+  if (pwr_on) digitalWrite(PIN_I2C_PWR_EN,HIGH);
+  else digitalWrite(PIN_I2C_PWR_EN,LOW);
+  #endif
 }
 
 /// @note  call approximately 1/sec
@@ -73,59 +97,84 @@ void measure_state_machine(void)
   mctrl.sec_cntr++;
   if (mctrl.sec_cntr > mctrl.time_to_next)
   {
+    if (mctrl.prev_state != mctrl.state)
+    {
+      Serial.printf("Measure State %d -> %d\n",mctrl.prev_state, mctrl.state);
+      mctrl.prev_state = mctrl.state;
+    }
     switch(mctrl.state)
     {
       case 0:
-        measure_toggle_i2c_power();
+        measure_i2c_power(true);
         mctrl.time_to_next += 5;
+        mctrl.state++;
         break;
       case 1:
-        if (measure_initialize())
-        {
+        mctrl.time_to_next = mctrl.sec_cntr + 2;
+        if (measure_initialize()) 
+        { 
           mctrl.state++;
-          mctrl.time_to_next = mctrl.sec_cntr + 2;
         }
-        else mctrl.state--;
+        else
+        {
+          measure_i2c_power(false);
+          mctrl.state--;
+        } 
         break;
       case 2:
         if (measure_read_bme())
         {
+          if (measure[MEAS_TEMPERATURE].active)
+          {
+            measure[MEAS_TEMPERATURE].value = bme.temperature;
+            measure[MEAS_TEMPERATURE].updated = true;
+          }
+          if (measure[MEAS_HUMIDITY].active)
+          {
+            measure[MEAS_HUMIDITY].value = bme.humidity;
+            measure[MEAS_HUMIDITY].updated = true;
+          }
+          if (measure[MEAS_PRESSURE].active)
+          {
+            measure[MEAS_PRESSURE].value = bme.pressure;
+            measure[MEAS_PRESSURE].updated = true;
+          }
+          if (measure[MEAS_LDR1].active)
+          {
+            measure[MEAS_LDR1].value = (float)analogRead(A0);
+            measure[MEAS_LDR1].updated = true;
+          }
+          if (measure[MEAS_LDR2].active)
+          {
+            measure[MEAS_LDR2].value = (float)analogRead(A1);
+            measure[MEAS_LDR2].updated = true;
+          }
           mctrl.bme_last_read = mctrl.sec_cntr;
         }
         mctrl.state++;
         break;
       case 3:  
-        measure_toggle_i2c_power();
-        mctrl.state++;
+        measure_i2c_power(false);
+        mctrl.time_to_next += 30;
+        mctrl.state = 0;
         break;
-      case 4:  
-        break;
-
     }
 
   }
 }
 
-float measure_get_bme_temperature(void)
+
+bool measure_is_active(measure_et mindx)
 {
-    if (mctrl.bme_is_ok) return bme.temperature;
-    else return 0.0;
+  return measure[mindx].active;
 }
 
-float measure_get_bme_humidity(void)
+bool measure_is_updated(measure_et mindx)
 {
-    if (mctrl.bme_is_ok) return bme.humidity;
-    else return 0.0;
+  return measure[mindx].updated;
 }
 
-float measure_get_ldr1(void)
+float measure_get_value(measure_et mindx)
 {
-  int ldr1 = analogRead(A0);
-  return (float)ldr1;
-}
-
-float measure_get_ldr2(void)
-{
-  int ldr2 = analogRead(A1);
-  return (float)ldr2;
+  return measure[mindx].value;
 }

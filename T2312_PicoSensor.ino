@@ -55,7 +55,6 @@ typedef struct
     uint8_t     publ_indx;
     uint32_t    next_sec;
     uint32_t    next_ping;
-    uint32_t    next_measure;
     uint32_t    sec_cntr;
     uint16_t    set_temp;
     bool        heat_on;
@@ -69,6 +68,7 @@ typedef struct
     uint32_t  interval;
     uint32_t  next_sec;
     float     value;
+    measure_et measure_index;
 
 } my_pub_st;
 
@@ -113,30 +113,34 @@ my_pub_st my_pub[FEED_PUB_NBR_OF] =
     [FEED_PUB_TEMPERATURE] = {
             .pub_feed = &sensor_temperature,
             .name = "TEMP",
-            .interval = 60,
+            .interval = 300,
             .next_sec = 0,
-            .value = 0.0
+            .value = 0.0,
+            .measure_index = MEAS_TEMPERATURE
           },
     [FEED_PUB_HUMIDITY] = {
             .pub_feed = &sensor_humidity,
             .name = "HUMI",
-            .interval = 120,
+            .interval = 600,
             .next_sec = 0,
-            .value = 0.0
+            .value = 0.0,
+            .measure_index = MEAS_HUMIDITY
           },
     [FEED_PUB_LDR1] = {
             .pub_feed = &sensor_ldr1,
             .name = "LDR1",
-            .interval = 300,
+            .interval = 600,
             .next_sec = 0,
-            .value = 0.0
+            .value = 0.0,
+            .measure_index = MEAS_LDR1
           },
     [FEED_PUB_LDR2] = {
             .pub_feed = &sensor_ldr2,
             .name = "LDR2",
-            .interval = 300,
+            .interval = 600,
             .next_sec = 0,
-            .value = 0.0
+            .value = 0.0,
+            .measure_index = MEAS_LDR2
           },
 };
 
@@ -167,6 +171,10 @@ void setup()
     Serial2.setRX(9);
     Serial2.begin(9600);
     delay(4000);
+
+  #ifdef VILLA_ASTRID_TUPA
+  pinMode(PIN_I2C_PWR_EN, OUTPUT);
+  #endif
 
     #ifdef VILLA_ASTRID_TUPA
     my_pub[FEED_PUB_LDR1].interval = 0;
@@ -220,7 +228,7 @@ void setup()
     }
     ctrl.next_sec   = millis() + 1000;
     ctrl.next_ping  = millis();
-    ctrl.next_measure = millis();
+   
 
     ctrl.sec_cntr   = 0;
     ctrl.publ_indx  = 0;
@@ -315,25 +323,6 @@ void loop()
     bool publ_status;
     char buff[80];
 
-    if (millis() > ctrl.next_measure)
-    {
-        ctrl.next_measure += 60000;
-        if ( measure_read_bme()) 
-        {
-            my_pub[FEED_PUB_TEMPERATURE].value  = measure_get_bme_temperature();
-            my_pub[FEED_PUB_HUMIDITY].value     = measure_get_bme_humidity();
-
-        }
-        else
-        {
-            ctrl.fault_cntr.bme_fault++;
-        }
-        #ifdef VILLA_ASTRID_PIHA
-        my_pub[FEED_PUB_LDR1].value = measure_get_ldr1();
-        my_pub[FEED_PUB_LDR2].value = measure_get_ldr2();
-        #endif
-    }
-
     if (millis() > ctrl.next_ping)
     {
         ctrl.next_ping += 60000;
@@ -364,10 +353,16 @@ void loop()
             if( ctrl.sec_cntr >= my_pub[ctrl.publ_indx].next_sec )
             {
                 my_pub[ctrl.publ_indx].next_sec +=  my_pub[ctrl.publ_indx].interval;
-                send_meas_to_uart(my_pub[ctrl.publ_indx].name, my_pub[ctrl.publ_indx].value);
-                publ_status = my_pub[ctrl.publ_indx].pub_feed->publish(my_pub[ctrl.publ_indx].value); //Publish to Adafruit
-                report_publ_status(publ_status);
-                ctrl.fault_cntr.bme_fault = 0;
+                measure_et mindx = my_pub[ctrl.publ_indx].measure_index;
+                if (measure_is_updated(mindx))
+                {
+                    my_pub[ctrl.publ_indx].value = measure_get_value(mindx);
+                    send_meas_to_uart(my_pub[ctrl.publ_indx].name, my_pub[ctrl.publ_indx].value);
+                    publ_status = my_pub[ctrl.publ_indx].pub_feed->publish(my_pub[ctrl.publ_indx].value); //Publish to Adafruit
+                    report_publ_status(publ_status);
+                    ctrl.fault_cntr.bme_fault = 0;
+                  }
+
             }
 
         }
